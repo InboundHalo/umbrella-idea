@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use axum::{Json, extract::State, http::StatusCode};
 use tokio::time::sleep;
@@ -16,34 +16,43 @@ pub async fn checkout(
         Ok(u) => u,
         Err(e) => return (StatusCode::BAD_REQUEST, e),
     };
+    {
+        let mut lookup_table = state.lookup_table.write().await;
 
-    let mut lookup_table = state.lookup_table.write().await;
+        if !lookup_table.user_allowed_to_take_out_umbrella(&user_id, &req.umbrella_id) {
+            return (StatusCode::OK, "no".to_string());
+        }
 
-    if !lookup_table.user_allowed_to_take_out_umbrella(&user_id, &req.umbrella_id) {
-        return (StatusCode::OK, "no".to_string());
+        lookup_table.checked_out_by.insert(req.umbrella_id, user_id);
+        lookup_table.holding.insert(user_id, req.umbrella_id);
     }
-
-    lookup_table.checked_out_by.insert(req.umbrella_id, user_id);
-    lookup_table.holding.insert(user_id, req.umbrella_id);
-
     println!(
         "user_id: {:?} took out umbrella_id: {}",
         user_id, req.umbrella_id
     );
 
+    let copied_lookup_table = Arc::clone(&state.lookup_table);
     tokio::spawn(async move {
         sleep(Duration::from_secs(4)).await;
-        println!(
-            "user_id: {:?}, it has been 4 seconds please return",
-            user_id
-        );
+
+        let lookup_table = copied_lookup_table.write().await;
+        if let Some(umbrella_id) = lookup_table.holding.get(&user_id) {
+            println!(
+                "user_id: {:?}, it has been 4 seconds please return umbrella_id: {}",
+                user_id, umbrella_id
+            );
+        }
     });
+    let copied_lookup_table_2 = Arc::clone(&state.lookup_table);
     tokio::spawn(async move {
         sleep(Duration::from_secs(8)).await;
-        println!(
-            "user_id: {:?}, it has been 8 seconds you are charged will be charged with a late fee of $1",
-            user_id
-        );
+        let lookup_table = copied_lookup_table_2.write().await;
+        if let Some(umbrella_id) = lookup_table.holding.get(&user_id) {
+            println!(
+                "user_id: {:?}, it has been 8 seconds you are charged will be charged with a late fee of $1 for not returning umbrella_id: {}",
+                user_id, umbrella_id
+            );
+        }
     });
 
     (StatusCode::OK, "yes".to_string())
