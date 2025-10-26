@@ -17,24 +17,33 @@ pub async fn checkout(
         Err(e) => return (StatusCode::BAD_REQUEST, e),
     };
 
-    let mut inner = state.lookup_table.write().await;
+    let mut lookup_table = state.lookup_table.write().await;
 
-    if !inner.user_allowed_to_take_out_umbrella(&user_id, &req.umbrella_id) {
+    if !lookup_table.user_allowed_to_take_out_umbrella(&user_id, &req.umbrella_id) {
         return (StatusCode::OK, "no".to_string());
     }
 
-    inner.checked_out_by.insert(req.umbrella_id, user_id);
-    inner.holding.insert(user_id, req.umbrella_id);
+    lookup_table.checked_out_by.insert(req.umbrella_id, user_id);
+    lookup_table.holding.insert(user_id, req.umbrella_id);
 
-    println!("took out umbrella_id: {}", req.umbrella_id);
+    println!(
+        "user_id: {:?} took out umbrella_id: {}",
+        user_id, req.umbrella_id
+    );
 
     tokio::spawn(async move {
         sleep(Duration::from_secs(4)).await;
-        println!("It has been 4 seconds please return");
+        println!(
+            "user_id: {:?}, it has been 4 seconds please return",
+            user_id
+        );
     });
     tokio::spawn(async move {
         sleep(Duration::from_secs(8)).await;
-        println!("It has been 8 seconds please return");
+        println!(
+            "user_id: {:?}, it has been 8 seconds you are charged will be charged with a late fee of $1",
+            user_id
+        );
     });
 
     (StatusCode::OK, "yes".to_string())
