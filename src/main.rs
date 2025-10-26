@@ -1,30 +1,39 @@
-use http_body_util::Full;
-use hyper::body::Bytes;
-use hyper::server::conn::http1;
-use hyper::service::service_fn;
-use hyper::{Request, Response};
-use hyper_util::rt::TokioIo;
-use std::convert::Infallible;
 use std::net::SocketAddr;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
-
-struct WATERLOO_UUID(u64);
-
-struct UMBRELLA_UUID(u32);
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
-
+    let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     let listener = TcpListener::bind(addr).await?;
+    println!("Listening on {}", addr);
 
     loop {
-        let (stream, _) = listener.accept().await?;
-
-        let io = TokioIo::new(stream);
-
-        tokio::task::spawn(async move {
-            println!("IO: {:?}", io);
+        let (mut stream, peer) = listener.accept().await?;
+        tokio::spawn(async move {
+            println!("New connection from {}", peer);
+            let mut buf = vec![0u8; 16 * 1024];
+            loop {
+                match stream.read(&mut buf).await {
+                    Ok(0) => {
+                        println!("{} closed", peer);
+                        break;
+                    }
+                    Ok(n) => {
+                        // Print hex + utf8-ish preview
+                        println!("--- {} bytes from {} ---", n, peer);
+                        println!("{:02x?}", &buf[..n]);
+                        match std::str::from_utf8(&buf[..n]) {
+                            Ok(s) => println!("UTF-8:\n{}\n", s),
+                            Err(_) => println!("(non-UTF-8)\n"),
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Read error from {}: {}", peer, e);
+                        break;
+                    }
+                }
+            }
         });
     }
 }
