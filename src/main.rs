@@ -13,6 +13,9 @@ mod requests;
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 struct UserId([u8; 7]);
 
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+struct UmbrellaId(u32);
+
 #[derive(Clone)]
 struct AppState {
     lookup_table: Arc<RwLock<LookupTable>>,
@@ -22,13 +25,17 @@ struct AppState {
 // a intent of fine after that
 struct LookupTable {
     // umbrella_id -> user_id
-    checked_out_by: HashMap<u32, UserId>,
+    checked_out_by: HashMap<UmbrellaId, UserId>,
     // user_id -> umbrella_id
-    holding: HashMap<UserId, u32>,
+    holding: HashMap<UserId, UmbrellaId>,
 }
 
 impl LookupTable {
-    fn user_allowed_to_take_out_umbrella(&self, user_id: &UserId, umbrella_id: &u32) -> bool {
+    fn user_allowed_to_take_out_umbrella(
+        &self,
+        user_id: &UserId,
+        umbrella_id: &UmbrellaId,
+    ) -> bool {
         if self.holding.contains_key(user_id) {
             println!("User already has an umbrella taken out!");
             false

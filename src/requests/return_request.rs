@@ -1,6 +1,6 @@
 use axum::{Json, extract::State, http::StatusCode};
 
-use crate::{ActionReq, AppState, parse_user_id};
+use crate::{ActionReq, AppState, UmbrellaId, parse_user_id};
 
 // POST /return
 // Body: { "user_id": "0x04:04:04:04:04:04:04", "umbrella_id": 123 }
@@ -9,19 +9,34 @@ pub async fn return_umbrella(
     State(state): State<AppState>,
     Json(req): Json<ActionReq>,
 ) -> (StatusCode, String) {
-    let uid = match parse_user_id(&req.user_id) {
-        Ok(u) => u,
+    let user_id = match parse_user_id(&req.user_id) {
+        Ok(user_id) => user_id,
         Err(e) => return (StatusCode::BAD_REQUEST, e),
     };
 
-    let mut inner = state.lookup_table.write().await;
+    let umbrella_id = UmbrellaId(req.umbrella_id);
 
-    match inner.checked_out_by.get(&req.umbrella_id) {
-        Some(holder) if holder == &uid => {
-            inner.checked_out_by.remove(&req.umbrella_id);
-            inner.holding.remove(&uid);
-            println!("Returned umbrella_id: {}", req.umbrella_id);
-            (StatusCode::OK, "confirmed".to_string())
+    let mut lookup_table = state.lookup_table.write().await;
+
+    match lookup_table.checked_out_by.get(&umbrella_id) {
+        Some(holder) => {
+            if holder == &user_id {
+                lookup_table.checked_out_by.remove(&umbrella_id);
+                lookup_table.holding.remove(&user_id);
+                println!("Returned umbrella_id: {:?}", umbrella_id);
+                (StatusCode::OK, "confirmed".to_string())
+            } else {
+                if let Some(user_id_that_checked_it_out) =
+                    lookup_table.checked_out_by.remove(&umbrella_id)
+                {
+                    lookup_table.holding.remove(&user_id_that_checked_it_out);
+                    println!("Returned umbrella_id: {:?}", umbrella_id);
+                    (StatusCode::OK, "confirmed".to_string())
+                } else {
+                    println!("How did we get here?");
+                    (StatusCode::OK, "failed".to_string())
+                }
+            }
         }
         _ => (StatusCode::OK, "failed".to_string()),
     }
