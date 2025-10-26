@@ -5,12 +5,17 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+use crate::requests::allowed_request::checkout;
+use crate::requests::return_request::return_umbrella;
+
+mod requests;
+
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 struct UserId([u8; 7]);
 
 #[derive(Clone)]
 struct AppState {
-    inner: Arc<RwLock<LookupTable>>,
+    lookup_table: Arc<RwLock<LookupTable>>,
 }
 
 // TODO: time based logging, send an email after checkout, 1 hour of use, and 24, with a email with
@@ -25,6 +30,7 @@ struct LookupTable {
 impl LookupTable {
     fn user_allowed_to_take_out_umbrella(&self, user_id: &UserId, umbrella_id: &u32) -> bool {
         if self.holding.contains_key(user_id) {
+            println!("User already has an umbrella taken out!");
             false
         } else if self.checked_out_by.contains_key(umbrella_id) {
             println!("Error: umbrella should not be able to offered if it is already checked out!");
@@ -44,7 +50,7 @@ struct ActionReq {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let state = AppState {
-        inner: Arc::new(RwLock::new(LookupTable {
+        lookup_table: Arc::new(RwLock::new(LookupTable {
             checked_out_by: HashMap::new(),
             holding: HashMap::new(),
         })),
@@ -60,53 +66,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
     Ok(())
-}
-
-// POST /allowed
-// Body: { "user_id": "0x04:04:04:04:04:04:04", "umbrella_id": 123 }
-// Response: "yes" or "no" (text/plain)
-async fn checkout(
-    State(state): State<AppState>,
-    Json(req): Json<ActionReq>,
-) -> (StatusCode, String) {
-    let user_id = match parse_user_id(&req.user_id) {
-        Ok(u) => u,
-        Err(e) => return (StatusCode::BAD_REQUEST, e),
-    };
-
-    let mut inner = state.inner.write().await;
-
-    if !inner.user_allowed_to_take_out_umbrella(&user_id, &req.umbrella_id) {
-        return (StatusCode::OK, "no".to_string());
-    }
-
-    inner.checked_out_by.insert(req.umbrella_id, user_id);
-    inner.holding.insert(user_id, req.umbrella_id);
-    (StatusCode::OK, "yes".to_string())
-}
-
-// POST /return
-// Body: { "user_id": "0x04:04:04:04:04:04:04", "umbrella_id": 123 }
-// Response: "confirmed" or "failed" (text/plain)
-async fn return_umbrella(
-    State(state): State<AppState>,
-    Json(req): Json<ActionReq>,
-) -> (StatusCode, String) {
-    let uid = match parse_user_id(&req.user_id) {
-        Ok(u) => u,
-        Err(e) => return (StatusCode::BAD_REQUEST, e),
-    };
-
-    let mut inner = state.inner.write().await;
-
-    match inner.checked_out_by.get(&req.umbrella_id) {
-        Some(holder) if holder == &uid => {
-            inner.checked_out_by.remove(&req.umbrella_id);
-            inner.holding.remove(&uid);
-            (StatusCode::OK, "confirmed".to_string())
-        }
-        _ => (StatusCode::OK, "failed".to_string()),
-    }
 }
 
 // Accepts forms:
@@ -142,4 +101,3 @@ fn parse_user_id(raw: &str) -> Result<UserId, String> {
 
     Ok(UserId(out))
 }
-
