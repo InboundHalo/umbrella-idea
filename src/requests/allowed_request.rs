@@ -1,4 +1,7 @@
+use std::time::Duration;
+
 use axum::{Json, extract::State, http::StatusCode};
+use tokio::time::sleep;
 
 use crate::{ActionReq, AppState, parse_user_id};
 
@@ -24,5 +27,15 @@ pub async fn checkout(
     inner.holding.insert(user_id, req.umbrella_id);
 
     println!("took out umbrella_id: {}", req.umbrella_id);
+
+    tokio::spawn(async move {
+        sleep(Duration::from_secs(4)).await;
+        println!("It has been 4 seconds please return");
+    });
+    tokio::spawn(async move {
+        sleep(Duration::from_secs(8)).await;
+        println!("It has been 8 seconds please return");
+    });
+
     (StatusCode::OK, "yes".to_string())
 }
